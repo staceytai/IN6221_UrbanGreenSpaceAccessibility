@@ -237,10 +237,10 @@
 
         // Load all GeoJSON files
         Promise.all([
-            d3.json("MasterPlan2019PlanningAreaBoundaryNoSea.geojson"),
-            d3.json("MasterPlan2019LandUselayer.geojson"),
-            d3.json("Parks.geojson"),
-            d3.json("NParksTracks.geojson")
+            d3.json("src/MasterPlan2019PlanningAreaBoundaryNoSea.geojson"),
+            d3.json("src/MasterPlan2019LandUselayer.geojson"),
+            d3.json("src/Parks.geojson"),
+            d3.json("src/NParksTracks.geojson")
         ]).then(function ([boundaryData, landUseData, parksData, tracksData]) {
             // Remove loading text
             loadingText.remove();
@@ -834,3 +834,4 @@
 </body>
 
 </html>
+
