@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard 1 | “Pressure” — Singapore’s High-Density Urban Environment</title>
+
+  <!-- Turf (for polygon winding correction) -->
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+  <style>
+    :root { --gap: 16px; }
+    body { margin: 20px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans"; color:#222; }
+    .wrap { max-width: 1400px; margin:0 auto; }
+    header h1 { margin:0 0 8px; font-size:22px; }
+    header .note { color:#555; margin:4px 0 16px; }
+    .kpi { display:grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap); margin-bottom: var(--gap); }
+    .card { background:#f8f8fb; border:1px solid #eee; border-radius:14px; padding:12px 14px; min-height:54px; }
+    .k-title { font-size:12px; color:#666; }
+    .k-val { font-size:20px; font-weight:700; margin-top:2px; }
+    .row { display:grid; grid-template-columns: 3fr 2fr; gap: var(--gap); }
+    .row2 { display:grid; grid-template-columns: 1fr; gap: var(--gap); margin-top: var(--gap); }
+    .panel { background:#fff; border:1px solid #eee; border-radius:14px; padding:10px; min-height:120px; }
+    .tooltip { position:absolute; pointer-events:none; background:rgba(0,0,0,.85); color:#fff; padding:8px 10px; border-radius:8px; font-size:12px; line-height:1.3; }
+    h3 { margin:10px 0 6px; }
+    .error { background:#fff3f3; border:1px solid #f5b5b5; color:#b00020; padding:10px 12px; border-radius:10px; margin:10px 0; white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Dashboard 1 — “Pressure”: Singapore’s High-Density Urban Environment</h1>
+    <!-- note intentionally removed per request -->
+    <div id="errBox"></div>
+  </header>
+
+  <section class="kpi">
+    <div class="card" id="k1"></div>
+    <div class="card" id="k2"></div>
+    <div class="card" id="k3"></div>
+    <div class="card" id="k4"></div>
+  </section>
+
+  <section class="row">
+    <div class="panel"><svg id="map" width="860" height="560"></svg></div>
+    <div class="panel"><svg id="bar" width="520" height="420"></svg></div>
+  </section>
+
+  <section class="row2">
+    <div class="panel">
+      <h3>Land Use Composition</h3>
+      <svg id="donut" width="400" height="400"></svg>
+    </div>
+  </section>
+</div>
+
+<!-- Main Script -->
+<script type="module">
+import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
+
+const GEOJSON_FILE = "planning_area.json";
+const POP_FILE     = "population_by_pa.csv";
+const LANDUSE_FILE = "land_use_citywide.csv";
+const SG_TOTAL_AREA_KM2 = 738;
+
+const mapW = 860, mapH = 560;
+const barW = 520, barH = 420, barMargin = {top: 28, right: 16, bottom: 44, left: 160};
+const donutW = 400, donutH = 400, donutR = Math.min(donutW, donutH) * 0.45;
+
+// util
+const toKey    = s => (s || "").trim().toUpperCase().replace(/\s+/g, " ");
+const parseNum = v => +String(v ?? "").replace(/,/g,"").trim();
+const fmtNum   = d3.format(","), fmt1 = d3.format(",.1f"), fmt0 = d3.format(",.0f");
+const errBox   = d3.select("#errBox");
+const showError=(msg,e)=>{ console.error(msg,e); errBox.append("div").attr("class","error").text(`${msg}\n${e?.message ?? e ?? ""}`); };
+
+// color helpers (unify YlOrRd palette across visuals)
+const interpolate = d3.interpolateYlOrRd;
+// for ordinal palettes (donut), generate n shades within 0.25→0.95 to avoid too-pale/too-dark extremes
+const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().domain([0,n-1]).range([0.25,0.95])(i)));
+
+(async function main(){
+  try {
+    const mapSvg = d3.select("#map");
+    const barSvg = d3.select("#bar");
+    const donutSvg = d3.select("#donut").append("g").attr("transform",`translate(${donutW/2},${donutH/2})`);
+
+    const projection = d3.geoMercator().center([103.851959, 1.29027]).scale(60000).translate([mapW/2, mapH/2]);
+    const path = d3.geoPath(projection);
+
+    // Load data
+    let rawGeo;
+    try { rawGeo = await d3.json(GEOJSON_FILE); }
+    catch(e){ showError(`Failed to load ${GEOJSON_FILE}. Please ensure it is in the same folder.`, e); return; }
+
+    let popRows = [];
+    try { popRows = await d3.csv(POP_FILE, d => ({ pa: toKey(d.Planning_Area), pop: +d.Population })); }
+    catch(e){ showError(`Failed to load ${POP_FILE}. Ensure columns: Planning_Area, Population.`, e); return; }
+
+    let landuseRaw = [];
+    try { landuseRaw = await d3.csv(LANDUSE_FILE); }
+    catch(e){ showError(`Failed to load ${LANDUSE_FILE}. Please check if it's in the same folder.`, e); }
+
+    // Geometry correction
+    const geo = turf.rewind(rawGeo, { reverse:true, mutate:true });
+
+    // Clip path
+    const defs = mapSvg.append("defs");
+    const clipId = "sg-clip-" + Math.random().toString(36).slice(2);
+    defs.append("clipPath").attr("id", clipId)
+      .selectAll("path").data(geo.features).join("path").attr("d", d => path(d));
+
+    // Population mapping
+    const popMap = new Map(popRows.map(d => [d.pa, d.pop]));
+
+    // Area normalization
+    const pxAreas = geo.features.map(f => path.area(f));
+    const km2PerPx = SG_TOTAL_AREA_KM2 / d3.sum(pxAreas);
+
+    const stats = geo.features.map((f, i) => {
+      const name = toKey(f.properties?.PLN_AREA_N);
+      const areaKm2 = pxAreas[i] * km2PerPx;
+      const pop = popMap.get(name) || 0;
+      const dens = areaKm2 > 0 ? pop / areaKm2 : 0;
+      return { name, areaKm2, pop, dens, feature: f };
+    });
+
+    // KPIs
+    const totalPop = d3.sum(stats, d => d.pop);
+    const totalArea = d3.sum(stats, d => d.areaKm2);
+    const avgDens  = totalArea ? totalPop / totalArea : 0;
+    const topDense = stats.reduce((a,b)=> a.dens>b.dens?a:b, stats[0]);
+
+    d3.select("#k1").html(`<div class="k-title">Total Population</div><div class="k-val">${fmtNum(totalPop)}</div>`);
+    d3.select("#k2").html(`<div class="k-title">Total Area (km²)</div><div class="k-val">${fmt1(totalArea)}</div>`);
+    d3.select("#k3").html(`<div class="k-title">Average Density</div><div class="k-val">${fmt0(avgDens)} / km²</div>`);
+    d3.select("#k4").html(`<div class="k-title">Most Dense Area</div><div class="k-val">${topDense?.name || "-"}</div>`);
+
+    // Choropleth Map (base palette)
+    const densExtent = d3.extent(stats, d => d.dens);
+    const color = d3.scaleSequential(interpolate).domain(densExtent);
+
+    const g = mapSvg.append("g").attr("clip-path", `url(#${clipId})`);
+    const tooltip = d3.select("body").append("div").attr("class","tooltip").style("opacity",0);
+
+    g.selectAll("path").data(stats).join("path")
+      .attr("d", d => path(d.feature))
+      .attr("fill", d => color(d.dens))
+      .attr("stroke", "#fff").attr("stroke-width", 0.6)
+      .on("mousemove", (ev, d) => {
+        tooltip.style("opacity", 1).html(
+          `<strong>${d.name}</strong><br/>
+           Population: ${fmtNum(d.pop)}<br/>
+           Area: ${fmt1(d.areaKm2)} km²<br/>
+           Density: ${fmt0(d.dens)} / km²`
+        ).style("left", (ev.pageX + 12) + "px").style("top", (ev.pageY + 12) + "px");
+      })
+      .on("mouseleave", () => tooltip.style("opacity", 0));
+
+    createLegend({svg: mapSvg, color, x: 16, y: mapH - 56, width: 340, title: "Population Density (people/km²)"});
+
+    // Top 10 Bar Chart — use same YlOrRd palette by density
+    const top10 = stats.filter(d=>d.pop>0 && isFinite(d.dens))
+      .sort((a,b)=>d3.descending(a.dens,b.dens)).slice(0,10);
+
+    const x = d3.scaleLinear().domain([0, d3.max(top10,d=>d.dens)]).range([barMargin.left, barW - barMargin.right]);
+    const y = d3.scaleBand().domain(top10.map(d=>d.name)).range([barMargin.top, barH - barMargin.bottom]).padding(0.12);
+
+    barSvg.append("text").attr("x", barMargin.left).attr("y", 20).attr("font-weight",700)
+      .text("Top 10 Planning Areas by Population Density");
+
+    // bar color uses the same sequential scale mapped to density range of top10
+    const colorBar = d3.scaleSequential(interpolate).domain([d3.min(top10,d=>d.dens), d3.max(top10,d=>d.dens)]);
+
+    barSvg.append("g").selectAll("rect").data(top10).join("rect")
+      .attr("x", x(0)).attr("y", d => y(d.name))
+      .attr("width", d => x(d.dens)-x(0)).attr("height", y.bandwidth())
+      .attr("fill", d => colorBar(d.dens))
+      .attr("stroke", "#fff").attr("stroke-width", 0.5)
+      .append("title").text(d => `${d.name}: ${fmt0(d.dens)} / km²`);
+
+    barSvg.append("g").attr("transform", `translate(0,${barH - barMargin.bottom})`)
+      .call(d3.axisBottom(x).ticks(5).tickFormat(d3.format(".2s")));
+    barSvg.append("g").attr("transform", `translate(${barMargin.left},0)`).call(d3.axisLeft(y));
+
+    // Donut Chart (Land Use) — ordinal colors sampled from YlOrRd
+    let landuse = [];
+    if (landuseRaw && landuseRaw.length){
+      landuse = landuseRaw.map(d => {
+        const cat = (d.Category ?? d.category ?? d.CATEGORY ?? "").toString().trim();
+        let areaKm2 = NaN;
+        if (d.Area_km2 != null) {
+          areaKm2 = parseNum(d.Area_km2);
+        } else if (d.Hectares != null || d.hectares != null) {
+          areaKm2 = parseNum(d.Hectares ?? d.hectares) / 100;
+        }
+        return { cat, area: areaKm2 };
+      }).filter(d => d.cat && isFinite(d.area) && d.area>0);
+    }
+
+    if (!landuse.length){
+      showError(`No valid land-use data found. Please include two columns in ${LANDUSE_FILE}:\n1) Category\n2) Area_km2 or Hectares (auto-converted)`);
+    } else {
+      // sort by area (optional, nicer gradients)
+      landuse.sort((a,b)=>d3.descending(a.area,b.area));
+      const totalLU = d3.sum(landuse, d=>d.area);
+
+      const pie = d3.pie().value(d=>d.area)(landuse);
+      const arc = d3.arc().innerRadius(donutR*0.6).outerRadius(donutR);
+
+      const colors = ylOrRdPalette(landuse.length);
+      const color2 = d3.scaleOrdinal().domain(landuse.map(d=>d.cat)).range(colors);
+
+      const donutG = donutSvg.selectAll("path").data(pie).join("path")
+        .attr("d", arc).attr("fill", d=>color2(d.data.cat))
+        .attr("stroke","#fff").attr("stroke-width",0.6);
+
+      donutG.append("title").text(d => `${d.data.cat}: ${fmt1(d.data.area)} km² (${d3.format(".1%")(d.data.area/totalLU)})`);
+
+      // center labels
+      donutSvg.append("text").attr("text-anchor","middle").attr("dy","-0.2em")
+        .style("font-weight",700).text("Total");
+      donutSvg.append("text").attr("text-anchor","middle").attr("dy","1.1em")
+        .style("fill","#666").text(`${fmt1(totalLU)} km²`);
+
+      // slice labels
+      donutSvg.selectAll("text.label").data(pie).join("text")
+        .attr("class","label")
+        .attr("transform", d => `translate(${arc.centroid(d)})`)
+        .attr("dy",".35em").attr("text-anchor","middle").style("font-size","12px")
+        .text(d => `${d.data.cat} (${d3.format(".0%")(d.data.area/totalLU)})`);
+    }
+  } catch (e) {
+    showError("Unexpected error occurred.", e);
+  }
+
+  // legend helper
+  function createLegend({svg, color, x, y, width=260, ticks=6, title=""}) {
+    const legend = svg.append("g").attr("transform", `translate(${x},${y})`);
+    const gradId = "grad-" + Math.random().toString(36).slice(2);
+    const defsL = svg.append("defs");
+    const grad = defsL.append("linearGradient").attr("id", gradId).attr("x1","0%").attr("x2","100%");
+    const n = 256; const domain = color.domain();
+    for (let i=0;i<n;i++){
+      const p=i/(n-1);
+      grad.append("stop").attr("offset", `${100*p}%`)
+          .attr("stop-color", color(domain[0] + p*(domain[1]-domain[0])));
+    }
+    legend.append("rect").attr("width", width).attr("height", 12).attr("fill", `url(#${gradId})`).attr("rx",4).attr("ry",4);
+    const axis = d3.axisBottom(d3.scaleLinear().domain(color.domain()).range([0,width])).ticks(ticks).tickFormat(d3.format(".2s"));
+    legend.append("g").attr("transform", `translate(0,16)`).call(axis);
+    legend.append("text").attr("y",-6).attr("font-weight",600).text(title);
+  }
+})();
+</script>
+</body>
+</html>
