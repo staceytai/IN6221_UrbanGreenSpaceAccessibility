@@ -13,6 +13,7 @@
     body { margin: 20px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans"; color:#222; }
     .wrap { max-width: 1400px; margin:0 auto; }
     header h1 { padding-bottom: 10px; font-size:22px; }
+    header .note { color:#555; margin:4px 0 16px; }
     .kpi { display:grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap); margin-bottom: var(--gap); }
     .card { background:#f8f8fb; border:1px solid #eee; border-radius:14px; padding:12px 14px; min-height:54px; }
     .k-title { font-size:12px; color:#666; }
@@ -69,8 +70,8 @@ const SG_TOTAL_AREA_KM2 = 738;
 
 const mapW = 860, mapH = 560;
 
-/* Bar chart margins：稍微往左下 */
-const barW = 520, barH = 420, barMargin = {top: 40, right: 16, bottom: 44, left: 140};
+/* Bar chart margins：稍微往左下一點 */
+const barW = 520, barH = 420, barMargin = {top: 60, right: 16, bottom: 44, left: 120};
 
 /* Donut 基本大小 */
 const donutW = 520, donutH = 400, donutR = Math.min(donutW, donutH) * 0.38;
@@ -179,7 +180,7 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
 
     createLegend({svg: mapSvg, color, x: 16, y: mapH - 56, width: 340, title: "Population Density (people/km²)"});
 
-    // Top 10 Bar
+    // Top 10 Bar（往左下一點）
     const top10 = stats.filter(d=>d.pop>0 && isFinite(d.dens))
       .sort((a,b)=>d3.descending(a.dens,b.dens)).slice(0,10);
 
@@ -291,7 +292,7 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
         })
         .attr("transform", d => {
           const p = d.data.area/totalLU;
-          if (p < MIN_PCT_FOR_LABEL && !isUtilities(d)) return "translate(0,0)";
+          if (p < MIN_PCT_FOR_LABEL && !isUtilities(d)) return "translate(0,0)`;
 
           // Utilities：固定在右邊、對齊自己那一塊
           if (isUtilities(d)) {
@@ -336,10 +337,10 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
         .attr("stroke-width",1);
     }
 
-    // Scatter：Area vs Population
+    // Scatter：Area vs Population（title 改成單行、整體往右，y 軸標籤往左一點）
     const scatterSvg = d3.select("#scatter");
     const sW = +scatterSvg.attr("width"), sH = +scatterSvg.attr("height");
-    const sMargin = {top: 28, right: 20, bottom: 48, left: 64};
+    const sMargin = {top: 40, right: 20, bottom: 48, left: 80};  // left 增加，圖往右
 
     const sX = d3.scaleLinear()
       .domain([0, d3.max(stats, d => d.areaKm2)]).nice()
@@ -353,13 +354,16 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
     const sR = d3.scaleSqrt()
       .domain([0, d3.max(stats, d => d.pop)]).range([2, 10]);
 
+    // 新標題（單行，置中）
     scatterSvg.append("text")
-      .attr("x", sMargin.left)
-      .attr("y", 18)
+      .attr("x", (sMargin.left + sW - sMargin.right) / 2)
+      .attr("y", 28)
+      .attr("text-anchor", "middle")
       .attr("font-weight", 700)
-      .text("Area vs Population (circle size ~ population; color ~ density)");
+      .text("Area vs Population per Planning Area");
 
     const scTip = d3.select("body").append("div").attr("class","tooltip").style("opacity",0);
+
     scatterSvg.append("g")
       .selectAll("circle").data(stats.filter(d => d.pop>0 && isFinite(d.areaKm2))).join("circle")
       .attr("cx", d => sX(d.areaKm2))
@@ -392,10 +396,11 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
       .style("fill","#555")
       .text("Area (km²)");
 
+    // Population 標籤往左一點（y 從 18 改成 10）
     scatterSvg.append("text")
       .attr("transform","rotate(-90)")
       .attr("x", -(sMargin.top + (sH - sMargin.bottom))/2)
-      .attr("y", 18)
+      .attr("y", 10)
       .attr("text-anchor","middle")
       .style("fill","#555")
       .text("Population");
