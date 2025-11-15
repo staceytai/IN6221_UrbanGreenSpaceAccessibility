@@ -93,7 +93,7 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
     const CENTER_SHIFT_X = 120;  // donut 中心往右移
     const donutSvg = d3.select("#donut")
       .append("g")
-      .attr("transform",`translate(${donutW/2 + CENTER_SHIFT_X},${donutH/2})`);
+      .attr("transform",`translate(${donutW/2 + CENTER_SHIFT_X},${donutH/2+40})`);
 
     const projection = d3.geoMercator().center([103.851959, 1.29027]).scale(60000).translate([mapW/2, mapH/2]);
     const path = d3.geoPath(projection);
@@ -364,4 +364,5 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
 </script>
 </body>
 </html>
+
 
