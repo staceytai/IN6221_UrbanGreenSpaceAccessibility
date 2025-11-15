@@ -265,13 +265,13 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
         .style("fill","#666")
         .text(`${fmt1(totalLU)} km²`);
 
-      // 外掛標籤 + 導線
       const MIN_PCT_FOR_LABEL = 0.03;
       const outerArc = d3.arc().innerRadius(donutR * 1.02).outerRadius(donutR * 1.02);
       const innerArc = d3.arc().innerRadius(donutR * 0.95).outerRadius(donutR * 0.95);
 
       const isUtilities = d => /UTILITIES/i.test(d.data.cat);
 
+      // 標籤文字
       const labels = donutSvg.selectAll("text.label")
         .data(pie)
         .join("text")
@@ -280,32 +280,34 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
         .style("font-size","12px")
         .style("fill","#333")
         .attr("text-anchor", d => {
-          if (isUtilities(d)) return "start";  // Utilities 固定在右側
+          if (isUtilities(d)) return "start";
           const mid = (d.startAngle + d.endAngle)/2;
           return mid < Math.PI ? "start" : "end";
         })
         .text(d => {
           const p = d.data.area/totalLU;
+          if (isUtilities(d)) return `${d.data.cat} (${d3.format(".0%")(p)})`;
           return p >= MIN_PCT_FOR_LABEL ? `${d.data.cat} (${d3.format(".0%")(p)})` : "";
         })
         .attr("transform", d => {
           const p = d.data.area/totalLU;
-          if (p < MIN_PCT_FOR_LABEL) return "translate(0,0)";
+          if (p < MIN_PCT_FOR_LABEL && !isUtilities(d)) return "translate(0,0)";
 
-          const mid = (d.startAngle + d.endAngle)/2;
-
-          // Utilities：把標籤固定擺到右上方
+          // Utilities：固定在右邊、對齊自己那一塊
           if (isUtilities(d)) {
-            const x = donutR * 1.4;   // 右側
-            const y = -donutR * 0.3;  // 稍微偏上
-            return `translate(${x}, ${y})`;
+            const pos = outerArc.centroid(d);
+            const xLabel = donutR * 1.25;
+            const yLabel = pos[1] - 4;
+            return `translate(${xLabel}, ${yLabel})`;
           }
 
+          const mid = (d.startAngle + d.endAngle)/2;
           const pos = outerArc.centroid(d);
           const offset = mid < Math.PI ? 18 : -18;
           return `translate(${pos[0] + offset}, ${pos[1]})`;
         });
 
+      // 導線
       donutSvg.selectAll("polyline.leader")
         .data(pie)
         .join("polyline")
@@ -313,14 +315,18 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
         .attr("points", d => {
           const p1 = innerArc.centroid(d);
           const p2 = outerArc.centroid(d);
-          const mid = (d.startAngle + d.endAngle)/2;
+          const p = d.data.area/totalLU;
 
-          // Utilities 的導線：指到右上角標籤位置
           if (isUtilities(d)) {
-            const p3 = [donutR * 1.4, -donutR * 0.3];
+            const pos = outerArc.centroid(d);
+            const xLabel = donutR * 1.25;
+            const yLabel = pos[1] - 4;
+            const p3 = [xLabel, yLabel];
             return [p1, p2, p3];
           }
+          if (p < MIN_PCT_FOR_LABEL) return [p1, p2, p2];
 
+          const mid = (d.startAngle + d.endAngle)/2;
           const offset = mid < Math.PI ? 16 : -16;
           const p3 = [p2[0] + offset, p2[1]];
           return [p1, p2, p3];
