@@ -70,7 +70,7 @@ const SG_TOTAL_AREA_KM2 = 738;
 
 const mapW = 860, mapH = 560;
 
-/* Bar chart margins：稍微往左下一點 */
+/* Bar chart margins：往左下一點 */
 const barW = 520, barH = 420, barMargin = {top: 60, right: 16, bottom: 44, left: 120};
 
 /* Donut 基本大小 */
@@ -273,7 +273,7 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
       const isUtilities = d => /UTILITIES/i.test(d.data.cat);
 
       // 標籤文字
-      const labels = donutSvg.selectAll("text.label")
+      donutSvg.selectAll("text.label")
         .data(pie)
         .join("text")
         .attr("class","label")
@@ -292,7 +292,7 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
         })
         .attr("transform", d => {
           const p = d.data.area/totalLU;
-          if (p < MIN_PCT_FOR_LABEL && !isUtilities(d)) return "translate(0,0)`;
+          if (p < MIN_PCT_FOR_LABEL && !isUtilities(d)) return "translate(0,0)";
 
           // Utilities：固定在右邊、對齊自己那一塊
           if (isUtilities(d)) {
