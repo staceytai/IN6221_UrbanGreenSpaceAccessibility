@@ -12,14 +12,15 @@
     :root { --gap: 16px; }
     body { margin: 20px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans"; color:#222; }
     .wrap { max-width: 1400px; margin:0 auto; }
-    header h1 { margin:0 0 8px; font-size:22px; }
+    header h1 { padding-bottom: 10px; font-size:22px; }
     header .note { color:#555; margin:4px 0 16px; }
     .kpi { display:grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap); margin-bottom: var(--gap); }
     .card { background:#f8f8fb; border:1px solid #eee; border-radius:14px; padding:12px 14px; min-height:54px; }
     .k-title { font-size:12px; color:#666; }
     .k-val { font-size:20px; font-weight:700; margin-top:2px; }
     .row { display:grid; grid-template-columns: 3fr 2fr; gap: var(--gap); }
-    .row2 { display:grid; grid-template-columns: 1fr; gap: var(--gap); margin-top: var(--gap); }
+    /* ✅ 改為兩欄，讓右下角放散點圖 */
+    .row2 { display:grid; grid-template-columns: 1fr 1fr; gap: var(--gap); margin-top: var(--gap); }
     .panel { background:#fff; border:1px solid #eee; border-radius:14px; padding:10px; min-height:120px; }
     .tooltip { position:absolute; pointer-events:none; background:rgba(0,0,0,.85); color:#fff; padding:8px 10px; border-radius:8px; font-size:12px; line-height:1.3; }
     h3 { margin:10px 0 6px; }
@@ -29,8 +30,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>Dashboard 1 — “Pressure”: Singapore’s High-Density Urban Environment</h1>
-    <!-- note intentionally removed per request -->
+    <h1>“Pressure”: Singapore’s High-Density Urban Environment</h1>
     <div id="errBox"></div>
   </header>
 
@@ -51,6 +51,12 @@
       <h3>Land Use Composition</h3>
       <svg id="donut" width="400" height="400"></svg>
     </div>
+
+    <!-- ✅ 新增：右下角散點圖 -->
+    <div class="panel">
+      <h3>Area vs Population (per Planning Area)</h3>
+      <svg id="scatter" width="520" height="400"></svg>
+    </div>
   </section>
 </div>
 
@@ -61,6 +67,7 @@ import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 const GEOJSON_FILE = "planning_area.json";
 const POP_FILE     = "population_by_pa.csv";
 const LANDUSE_FILE = "land_use_citywide.csv";
+/* 如要改成 735.7，這裡換掉數字即可 */
 const SG_TOTAL_AREA_KM2 = 738;
 
 const mapW = 860, mapH = 560;
@@ -87,6 +94,14 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
 
     const projection = d3.geoMercator().center([103.851959, 1.29027]).scale(60000).translate([mapW/2, mapH/2]);
     const path = d3.geoPath(projection);
+
+    // ✅ 地圖標題
+    mapSvg.append("text")
+      .attr("x", mapW/2)
+      .attr("y", 22)
+      .attr("text-anchor", "middle")
+      .attr("font-weight", 700)
+      .text("Population Density by Planning Area");
 
     // Load data
     let rawGeo;
@@ -169,7 +184,6 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
     barSvg.append("text").attr("x", barMargin.left).attr("y", 20).attr("font-weight",700)
       .text("Top 10 Planning Areas by Population Density");
 
-    // bar color uses the same sequential scale mapped to density range of top10
     const colorBar = d3.scaleSequential(interpolate).domain([d3.min(top10,d=>d.dens), d3.max(top10,d=>d.dens)]);
 
     barSvg.append("g").selectAll("rect").data(top10).join("rect")
@@ -201,7 +215,6 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
     if (!landuse.length){
       showError(`No valid land-use data found. Please include two columns in ${LANDUSE_FILE}:\n1) Category\n2) Area_km2 or Hectares (auto-converted)`);
     } else {
-      // sort by area (optional, nicer gradients)
       landuse.sort((a,b)=>d3.descending(a.area,b.area));
       const totalLU = d3.sum(landuse, d=>d.area);
 
@@ -223,13 +236,110 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
       donutSvg.append("text").attr("text-anchor","middle").attr("dy","1.1em")
         .style("fill","#666").text(`${fmt1(totalLU)} km²`);
 
-      // slice labels
-      donutSvg.selectAll("text.label").data(pie).join("text")
+      /* ✅ 外掛標籤＋導線，避免文字壓到圖；<3% 的切片省略外文字 */
+      const MIN_PCT_FOR_LABEL = 0.03;
+      const outerArc = d3.arc().innerRadius(donutR * 1.02).outerRadius(donutR * 1.02);
+      const innerArc = d3.arc().innerRadius(donutR * 0.95).outerRadius(donutR * 0.95);
+
+      const labels = donutSvg.selectAll("text.label")
+        .data(pie)
+        .join("text")
         .attr("class","label")
-        .attr("transform", d => `translate(${arc.centroid(d)})`)
-        .attr("dy",".35em").attr("text-anchor","middle").style("font-size","12px")
-        .text(d => `${d.data.cat} (${d3.format(".0%")(d.data.area/totalLU)})`);
+        .attr("dy",".35em")
+        .style("font-size","12px")
+        .style("fill","#333")
+        .attr("text-anchor", d => ((d.startAngle + d.endAngle)/2 < Math.PI ? "start" : "end"))
+        .text(d => {
+          const p = d.data.area/totalLU;
+          return p >= MIN_PCT_FOR_LABEL ? `${d.data.cat} (${d3.format(".0%")(p)})` : "";
+        })
+        .attr("transform", d => {
+          const pos = outerArc.centroid(d);
+          const mid = (d.startAngle + d.endAngle) / 2;
+          const offset = (mid < Math.PI) ? 18 : -18;
+          return `translate(${pos[0] + offset}, ${pos[1]})`;
+        });
+
+      donutSvg.selectAll("polyline.leader")
+        .data(pie)
+        .join("polyline")
+        .attr("class","leader")
+        .attr("points", d => {
+          const mid = (d.startAngle + d.endAngle) / 2;
+          const p1 = innerArc.centroid(d);
+          const p2 = outerArc.centroid(d);
+          const offset = (mid < Math.PI) ? 16 : -16;
+          const p3 = [p2[0] + offset, p2[1]];
+          return [p1, p2, p3];
+        })
+        .attr("fill","none")
+        .attr("stroke","#999")
+        .attr("stroke-width",1);
     }
+
+    // ==== ✅ Scatter: Area vs Population（右下角）====
+    const scatterSvg = d3.select("#scatter");
+    const sW = +scatterSvg.attr("width"), sH = +scatterSvg.attr("height");
+    const sMargin = {top: 28, right: 20, bottom: 48, left: 64};
+
+    const sX = d3.scaleLinear()
+      .domain([0, d3.max(stats, d => d.areaKm2)]).nice()
+      .range([sMargin.left, sW - sMargin.right]);
+
+    const sY = d3.scaleLinear()
+      .domain([0, d3.max(stats, d => d.pop)]).nice()
+      .range([sH - sMargin.bottom, sMargin.top]);
+
+    const sColor = d => color(d.dens);
+    const sR = d3.scaleSqrt()
+      .domain([0, d3.max(stats, d => d.pop)]).range([2, 10]);
+
+    scatterSvg.append("text")
+      .attr("x", sMargin.left)
+      .attr("y", 18)
+      .attr("font-weight", 700)
+      .text("Area vs Population (circle size ~ population; color ~ density)");
+
+    const scTip = d3.select("body").append("div").attr("class","tooltip").style("opacity",0);
+    scatterSvg.append("g")
+      .selectAll("circle").data(stats.filter(d => d.pop>0 && isFinite(d.areaKm2))).join("circle")
+      .attr("cx", d => sX(d.areaKm2))
+      .attr("cy", d => sY(d.pop))
+      .attr("r", d => sR(d.pop))
+      .attr("fill", d => sColor(d))
+      .attr("stroke", "#fff").attr("stroke-width", 0.7)
+      .on("mousemove", (ev, d) => {
+        scTip.style("opacity",1).html(
+          `<strong>${d.name}</strong><br/>
+           Area: ${fmt1(d.areaKm2)} km²<br/>
+           Population: ${fmtNum(d.pop)}<br/>
+           Density: ${fmt0(d.dens)} / km²`
+        ).style("left",(ev.pageX+12)+"px").style("top",(ev.pageY+12)+"px");
+      })
+      .on("mouseleave", () => scTip.style("opacity",0));
+
+    scatterSvg.append("g")
+      .attr("transform", `translate(0,${sH - sMargin.bottom})`)
+      .call(d3.axisBottom(sX).ticks(6));
+    scatterSvg.append("g")
+      .attr("transform", `translate(${sMargin.left},0)`)
+      .call(d3.axisLeft(sY).ticks(6));
+
+    scatterSvg.append("text")
+      .attr("x", (sMargin.left + sW - sMargin.right)/2)
+      .attr("y", sH - 8)
+      .attr("text-anchor","middle")
+      .style("fill","#555")
+      .text("Area (km²)");
+
+    scatterSvg.append("text")
+      .attr("transform","rotate(-90)")
+      .attr("x", -(sMargin.top + (sH - sMargin.bottom))/2)
+      .attr("y", 18)
+      .attr("text-anchor","middle")
+      .style("fill","#555")
+      .text("Population");
+
   } catch (e) {
     showError("Unexpected error occurred.", e);
   }
@@ -255,5 +365,3 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
 </script>
 </body>
 </html>
-
-
