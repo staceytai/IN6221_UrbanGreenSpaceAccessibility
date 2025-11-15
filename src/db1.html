@@ -90,7 +90,7 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
   try {
     const mapSvg = d3.select("#map");
     const barSvg = d3.select("#bar");
-    const CENTER_SHIFT_X = 60;  // donut 中心往右移
+    const CENTER_SHIFT_X = 120;  // donut 中心往右移
     const donutSvg = d3.select("#donut")
       .append("g")
       .attr("transform",`translate(${donutW/2 + CENTER_SHIFT_X},${donutH/2})`);
@@ -364,3 +364,4 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
 </script>
 </body>
 </html>
+
