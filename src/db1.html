@@ -51,7 +51,7 @@
   <section class="row2">
     <div class="panel">
       <h3>Land Use Composition</h3>
-      <!-- 寬度加大，給左側標籤空間 -->
+      <!-- 寬度加大，給左右標籤空間 -->
       <svg id="donut" width="520" height="400"></svg>
     </div>
 
@@ -73,8 +73,11 @@ const LANDUSE_FILE = "land_use_citywide.csv";
 const SG_TOTAL_AREA_KM2 = 738;   // 如要改 735.7 可改這裡
 
 const mapW = 860, mapH = 560;
-const barW = 520, barH = 420, barMargin = {top: 28, right: 16, bottom: 44, left: 160};
-/* Donut 改為寬 520、半徑稍小一點 */
+
+/* 直條圖 margin：往左下一點 */
+const barW = 520, barH = 420, barMargin = {top: 40, right: 16, bottom: 44, left: 140};
+
+/* Donut：寬 520、半徑略小一點 */
 const donutW = 520, donutH = 400, donutR = Math.min(donutW, donutH) * 0.38;
 
 const toKey    = s => (s || "").trim().toUpperCase().replace(/\s+/g, " ");
@@ -90,12 +93,20 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
   try {
     const mapSvg = d3.select("#map");
     const barSvg = d3.select("#bar");
-    const CENTER_SHIFT_X = 120;  // donut 中心往右移
+
+    // Donut 位置：整體往右 + 往下
+    const CENTER_SHIFT_X = 120;  // 右移
+    const CENTER_SHIFT_Y = 60;   // 下移
     const donutSvg = d3.select("#donut")
       .append("g")
-      .attr("transform",`translate(${donutW/2 + CENTER_SHIFT_X},${donutH/2+40})`);
+      .attr("transform",
+        `translate(${donutW/2 + CENTER_SHIFT_X}, ${donutH/2 + CENTER_SHIFT_Y})`
+      );
 
-    const projection = d3.geoMercator().center([103.851959, 1.29027]).scale(60000).translate([mapW/2, mapH/2]);
+    const projection = d3.geoMercator()
+      .center([103.851959, 1.29027])
+      .scale(60000)
+      .translate([mapW/2, mapH/2]);
     const path = d3.geoPath(projection);
 
     // 地圖標題
@@ -177,24 +188,39 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
     const top10 = stats.filter(d=>d.pop>0 && isFinite(d.dens))
       .sort((a,b)=>d3.descending(a.dens,b.dens)).slice(0,10);
 
-    const x = d3.scaleLinear().domain([0, d3.max(top10,d=>d.dens)]).range([barMargin.left, barW - barMargin.right]);
-    const y = d3.scaleBand().domain(top10.map(d=>d.name)).range([barMargin.top, barH - barMargin.bottom]).padding(0.12);
+    const x = d3.scaleLinear()
+      .domain([0, d3.max(top10,d=>d.dens)])
+      .range([barMargin.left, barW - barMargin.right]);
 
-    barSvg.append("text").attr("x", barMargin.left).attr("y", 20).attr("font-weight",700)
+    const y = d3.scaleBand()
+      .domain(top10.map(d=>d.name))
+      .range([barMargin.top, barH - barMargin.bottom])
+      .padding(0.12);
+
+    barSvg.append("text")
+      .attr("x", barMargin.left)
+      .attr("y", barMargin.top - 16)  // 跟 top margin 對齊
+      .attr("font-weight",700)
       .text("Top 10 Planning Areas by Population Density");
 
-    const colorBar = d3.scaleSequential(interpolate).domain([d3.min(top10,d=>d.dens), d3.max(top10,d=>d.dens)]);
+    const colorBar = d3.scaleSequential(interpolate)
+      .domain([d3.min(top10,d=>d.dens), d3.max(top10,d=>d.dens)]);
 
     barSvg.append("g").selectAll("rect").data(top10).join("rect")
       .attr("x", x(0)).attr("y", d => y(d.name))
-      .attr("width", d => x(d.dens)-x(0)).attr("height", y.bandwidth())
+      .attr("width", d => x(d.dens)-x(0))
+      .attr("height", y.bandwidth())
       .attr("fill", d => colorBar(d.dens))
       .attr("stroke", "#fff").attr("stroke-width", 0.5)
       .append("title").text(d => `${d.name}: ${fmt0(d.dens)} / km²`);
 
-    barSvg.append("g").attr("transform", `translate(0,${barH - barMargin.bottom})`)
+    barSvg.append("g")
+      .attr("transform", `translate(0,${barH - barMargin.bottom})`)
       .call(d3.axisBottom(x).ticks(5).tickFormat(d3.format(".2s")));
-    barSvg.append("g").attr("transform", `translate(${barMargin.left},0)`).call(d3.axisLeft(y));
+
+    barSvg.append("g")
+      .attr("transform", `translate(${barMargin.left},0)`)
+      .call(d3.axisLeft(y));
 
     // Donut：Land Use Composition
     let landuse = [];
@@ -214,7 +240,8 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
     if (!landuse.length){
       showError(`No valid land-use data found. Please include two columns in ${LANDUSE_FILE}:\n1) Category\n2) Area_km2 or Hectares (auto-converted)`);
     } else {
-      landuse.sort((a,b)=>d3.descending(a.area,b.area));
+      landuse.sort((a,b)=>d3.descending(a.area,b.a
+)        );
       const totalLU = d3.sum(landuse, d=>d.area);
 
       const pie = d3.pie().value(d=>d.area)(landuse);
@@ -227,13 +254,22 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
         .attr("d", arc).attr("fill", d=>color2(d.data.cat))
         .attr("stroke","#fff").attr("stroke-width",0.6);
 
-      donutG.append("title").text(d => `${d.data.cat}: ${fmt1(d.data.area)} km² (${d3.format(".1%")(d.data.area/totalLU)})`);
+      donutG.append("title").text(d =>
+        `${d.data.cat}: ${fmt1(d.data.area)} km² (${d3.format(".1%")(d.data.area/totalLU)})`
+      );
 
       // 中心文字
-      donutSvg.append("text").attr("text-anchor","middle").attr("dy","-0.2em")
-        .style("font-weight",700).text("Total");
-      donutSvg.append("text").attr("text-anchor","middle").attr("dy","1.1em")
-        .style("fill","#666").text(`${fmt1(totalLU)} km²`);
+      donutSvg.append("text")
+        .attr("text-anchor","middle")
+        .attr("dy","-0.2em")
+        .style("font-weight",700)
+        .text("Total");
+
+      donutSvg.append("text")
+        .attr("text-anchor","middle")
+        .attr("dy","1.1em")
+        .style("fill","#666")
+        .text(`${fmt1(totalLU)} km²`);
 
       // 外掛標籤 + 導線
       const MIN_PCT_FOR_LABEL = 0.03;
@@ -320,6 +356,7 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
     scatterSvg.append("g")
       .attr("transform", `translate(0,${sH - sMargin.bottom})`)
       .call(d3.axisBottom(sX).ticks(6));
+
     scatterSvg.append("g")
       .attr("transform", `translate(${sMargin.left},0)`)
       .call(d3.axisLeft(sY).ticks(6));
@@ -355,8 +392,11 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
       grad.append("stop").attr("offset", `${100*p}%`)
           .attr("stop-color", color(domain[0] + p*(domain[1]-domain[0])));
     }
-    legend.append("rect").attr("width", width).attr("height", 12).attr("fill", `url(#${gradId})`).attr("rx",4).attr("ry",4);
-    const axis = d3.axisBottom(d3.scaleLinear().domain(color.domain()).range([0,width])).ticks(ticks).tickFormat(d3.format(".2s"));
+    legend.append("rect").attr("width", width).attr("height", 12)
+      .attr("fill", `url(#${gradId})`).attr("rx",4).attr("ry",4);
+    const axis = d3.axisBottom(
+      d3.scaleLinear().domain(color.domain()).range([0,width])
+    ).ticks(ticks).tickFormat(d3.format(".2s"));
     legend.append("g").attr("transform", `translate(0,16)`).call(axis);
     legend.append("text").attr("y",-6).attr("font-weight",600).text(title);
   }
@@ -364,5 +404,3 @@ const ylOrRdPalette = (n)=> d3.range(n).map(i => interpolate(d3.scaleLinear().do
 </script>
 </body>
 </html>
-
-
